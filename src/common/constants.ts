@@ -1,5 +1,5 @@
 
-export const ExtensionId: string = 'humao.rest-client';
+export const ExtensionId: string = 'marlon.rest-client-fork';
 export const AiKey: string = 'ad746e27-4a36-441c-8b94-5db178f81ae3';
 
 export const NoEnvironmentSelectedName: string = 'c0cfe680-4fcd-4b71-a4ba-8cfaee57680a';
@@ -76,5 +76,7 @@ export const RequestVariableDefinitionWithNameRegexFactory = (name: string, flag
 export const RequestVariableDefinitionRegex: RegExp = RequestVariableDefinitionWithNameRegexFactory("\\w+", "m");
 
 export const PromptCommentRegex = /^\s*(?:#{1,}|\/{2,})\s*@prompt\s+([^\s]+)(?:\s+(.*))?\s*$/;
+
+export const UseScriptsRegex: RegExp = /^\s*(?:#|\/{2})\s*@use-scripts(?:\s+(.*?))?\s*$/i;
 
 export const LineSplitterRegex: RegExp = /\r?\n/g;

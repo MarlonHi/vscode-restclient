@@ -14,7 +14,9 @@ import { getCurrentTextDocument } from '../utils/workspaceUtility';
 import { CodeSnippetWebview } from '../views/codeSnippetWebview';
 
 const encodeUrl = require('encodeurl');
-const HTTPSnippet = require('httpsnippet');
+
+let httpSnippet: any;
+const HTTPSnippet = () => httpSnippet ??= require('httpsnippet');
 
 type CodeSnippetClient = {
     key: string;
@@ -30,9 +32,13 @@ type CodeSnippetTarget = {
 };
 
 export class CodeSnippetController {
-    private readonly _availableTargets: CodeSnippetTarget[] = HTTPSnippet.availableTargets();
+    private _targets: CodeSnippetTarget[] | undefined;
     private readonly clipboard: Clipboard;
     private _webview: CodeSnippetWebview;
+
+    private get _availableTargets(): CodeSnippetTarget[] {
+        return this._targets ??= HTTPSnippet().availableTargets();
+    }
 
     constructor(context: ExtensionContext) {
         this._webview = new CodeSnippetWebview(context);
@@ -59,7 +65,7 @@ export class CodeSnippetController {
         const httpRequest = await RequestParserFactory.createRequestParser(text, settings).parseHttpRequest();
 
         const harHttpRequest = this.convertToHARHttpRequest(httpRequest);
-        const snippet = new HTTPSnippet(harHttpRequest);
+        const snippet = new (HTTPSnippet())(harHttpRequest);
 
         let target: Pick<CodeSnippetTarget, 'key' | 'title'> | undefined = undefined;
 
@@ -137,7 +143,7 @@ export class CodeSnippetController {
             // Add protocol for url that doesn't specify protocol to pass the HTTPSnippet validation #328
             harHttpRequest.url = `http://${originalUrl}`;
         }
-        const snippet = new HTTPSnippet(harHttpRequest);
+        const snippet = new (HTTPSnippet())(harHttpRequest);
         if (addPrefix) {
             snippet.requests[0].fullUrl = originalUrl;
         }

@@ -4,15 +4,18 @@ import { EnvironmentVariableProvider } from './httpVariableProviders/environment
 import { FileVariableProvider } from './httpVariableProviders/fileVariableProvider';
 import { HttpVariableProvider } from './httpVariableProviders/httpVariableProvider';
 import { RequestVariableProvider } from './httpVariableProviders/requestVariableProvider';
+import { ScriptVariableProvider } from './httpVariableProviders/scriptVariableProvider';
 import { SystemVariableProvider } from './httpVariableProviders/systemVariableProvider';
 import { getCurrentTextDocument } from './workspaceUtility';
 
 export class VariableProcessor {
 
+    // Script variables are ambient and must never shadow what is written in the file itself.
     private static readonly providers: [HttpVariableProvider, boolean][] = [
         [SystemVariableProvider.Instance, false],
         [RequestVariableProvider.Instance, true],
         [FileVariableProvider.Instance, true],
+        [ScriptVariableProvider.Instance, false],
         [EnvironmentVariableProvider.Instance, true],
     ];
 
@@ -54,8 +57,9 @@ export class VariableProcessor {
     }
 
     public static async getAllVariablesDefinitions(document: TextDocument): Promise<Map<string, VariableType[]>> {
-        const [, [requestProvider], [fileProvider], [environmentProvider]] = this.providers;
+        const [, [requestProvider], [fileProvider], [scriptProvider], [environmentProvider]] = this.providers;
         const requestVariables = await (requestProvider as RequestVariableProvider).getAll(document);
+        const scriptVariables = await (scriptProvider as ScriptVariableProvider).getAll();
         const fileVariables = await (fileProvider as FileVariableProvider).getAll(document);
         const environmentVariables = await (environmentProvider as EnvironmentVariableProvider).getAll();
 
@@ -67,6 +71,15 @@ export class VariableProcessor {
                 variableDefinitions.get(name)!.push(VariableType.Request);
             } else {
                 variableDefinitions.set(name, [VariableType.Request]);
+            }
+        });
+
+        // Variables set by scripts
+        scriptVariables.forEach(({ name }) => {
+            if (variableDefinitions.has(name)) {
+                variableDefinitions.get(name)!.push(VariableType.Script);
+            } else {
+                variableDefinitions.set(name, [VariableType.Script]);
             }
         });
 

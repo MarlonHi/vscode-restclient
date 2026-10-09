@@ -1,4 +1,3 @@
-import { Amplify, Auth } from "aws-amplify";
 import type { BeforeRequestHook } from "got";
 
 async function login(
@@ -12,6 +11,9 @@ async function login(
   idToken: string;
   accessToken: string;
 }> {
+  // aws-amplify is several megabytes, keep it out of the activation path.
+  const { Amplify, Auth } = require("aws-amplify");
+
   Amplify.configure({
     Auth: {
       region,

@@ -1,4 +1,4 @@
-import * as yaml from 'js-yaml';
+import type * as yaml from 'js-yaml';
 
 export class SwaggerUtils {
     generateRestClientOutput(openApiYaml: any): string {
@@ -70,7 +70,7 @@ export class SwaggerUtils {
 
     parseOpenApiYaml(data: string): string | undefined {
         try {
-            const openApiYaml = yaml.load(data);
+            const openApiYaml = (require('js-yaml') as typeof yaml).load(data);
             return this.generateRestClientOutput(openApiYaml);
         } catch (error) {
             throw error;

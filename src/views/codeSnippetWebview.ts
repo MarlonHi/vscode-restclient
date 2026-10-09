@@ -3,7 +3,8 @@ import { trace } from '../utils/decorator';
 import { disposeAll } from '../utils/dispose';
 import { BaseWebview } from './baseWebview';
 
-const hljs = require('highlight.js');
+let highlightJs: any;
+const hljs = () => highlightJs ??= require('highlight.js');
 const codeHighlightLinenums = require('code-highlight-linenums');
 
 export class CodeSnippetWebview extends BaseWebview {
@@ -86,7 +87,7 @@ export class CodeSnippetWebview extends BaseWebview {
             </head>
             <body>
                 <div>
-                    <pre><code>${codeHighlightLinenums(convertResult, { hljs, lang: this.getHighlightJsLanguageAlias(lang), start: 1 })}</code></pre>
+                    <pre><code>${codeHighlightLinenums(convertResult, { hljs: hljs(), lang: this.getHighlightJsLanguageAlias(lang), start: 1 })}</code></pre>
                     <a id="scroll-to-top" role="button" aria-label="scroll to top" onclick="window.scroll(0,0)"><span class="icon"></span></a>
                 </div>
             </body>`;

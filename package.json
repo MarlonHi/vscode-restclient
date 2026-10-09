@@ -1,12 +1,12 @@
 {
-  "name": "rest-client",
-  "displayName": "REST Client",
-  "description": "REST Client for Visual Studio Code",
-  "version": "0.26.0",
-  "publisher": "humao",
+  "name": "rest-client-fork",
+  "displayName": "REST Client (fork)",
+  "description": "REST Client for Visual Studio Code (fork)",
+  "version": "0.28.1",
+  "publisher": "marlon",
   "author": {
-    "name": "Huachao Mao",
-    "email": "huachaomao@gmail.com"
+    "name": "Marlon",
+    "email": "marlon@example.com"
   },
   "icon": "images/rest_icon.png",
   "galleryBanner": {
@@ -15,13 +15,13 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Huachao/vscode-restclient/issues",
-    "email": "huachaomao@gmail.com"
+    "url": "https://github.com/marlon/vscode-restclient-fork/issues",
+    "email": "marlon@example.com"
   },
-  "homepage": "https://github.com/Huachao/vscode-restclient/blob/master/README.md",
+  "homepage": "https://github.com/marlon/vscode-restclient-fork/blob/master/README.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Huachao/vscode-restclient.git"
+    "url": "https://github.com/marlon/vscode-restclient-fork.git"
   },
   "engines": {
     "vscode": "^1.81.0"
@@ -86,6 +86,21 @@
       {
         "command": "rest-client.cancel-request",
         "title": "Cancel Request",
+        "category": "Rest Client"
+      },
+      {
+        "command": "rest-client.run-sequence",
+        "title": "Run Request Sequence",
+        "category": "Rest Client"
+      },
+      {
+        "command": "rest-client.run-all-requests",
+        "title": "Run All Requests In File",
+        "category": "Rest Client"
+      },
+      {
+        "command": "rest-client.clear-script-variables",
+        "title": "Clear Script Variables",
         "category": "Rest Client"
       },
       {
@@ -269,14 +284,24 @@
           "group": "rest-client@1"
         },
         {
-          "command": "rest-client.generate-codesnippet",
+          "command": "rest-client.run-sequence",
           "when": "editorTextFocus && editorLangId == http",
           "group": "rest-client@2"
         },
         {
-          "command": "rest-client.copy-request-as-curl",
+          "command": "rest-client.run-all-requests",
           "when": "editorTextFocus && editorLangId == http",
           "group": "rest-client@3"
+        },
+        {
+          "command": "rest-client.generate-codesnippet",
+          "when": "editorTextFocus && editorLangId == http",
+          "group": "rest-client@4"
+        },
+        {
+          "command": "rest-client.copy-request-as-curl",
+          "when": "editorTextFocus && editorLangId == http",
+          "group": "rest-client@5"
         }
       ]
     },
@@ -322,6 +347,12 @@
         "key": "ctrl+alt+k",
         "mac": "cmd+alt+k",
         "when": "editorTextFocus && editorLangId == 'plaintext'"
+      },
+      {
+        "command": "rest-client.run-sequence",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s",
+        "when": "editorTextFocus && editorLangId == 'http'"
       },
       {
         "command": "rest-client.history",
@@ -686,6 +717,76 @@
           "default": true,
           "scope": "resource",
           "description": "Enable/disable using filename from 'content-disposition' header, when saving response body"
+        },
+        "rest-client.enableScripts": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable/disable execution of pre-request and post-response scripts"
+        },
+        "rest-client.scriptTimeoutInMilliseconds": {
+          "type": "number",
+          "default": 30000,
+          "scope": "resource",
+          "description": "Timeout in milliseconds for a single pre-request or post-response script, set to 0 for no timeout"
+        },
+        "rest-client.globalPreRequestScript": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Comma separated JavaScript file(s) executed before every request of a file that opts in with '# @use-scripts'. Relative paths are resolved against the workspace folder"
+        },
+        "rest-client.globalPostResponseScript": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Comma separated JavaScript file(s) executed after every response of a file that opts in with '# @use-scripts'. Relative paths are resolved against the workspace folder"
+        },
+        "rest-client.enableSequenceCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable/disable the Run Sequence CodeLens above '# @sequence' definitions"
+        },
+        "rest-client.stopSequenceOnError": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Stop a request sequence as soon as one of its requests fails or one of its tests fails"
+        },
+        "rest-client.previewSequenceResponses": {
+          "type": "string",
+          "enum": [
+            "none",
+            "last",
+            "all"
+          ],
+          "default": "last",
+          "scope": "resource",
+          "description": "Which responses of a request sequence are shown in the response preview"
+        },
+        "rest-client.pollIntervalInMilliseconds": {
+          "type": "number",
+          "default": 1000,
+          "scope": "resource",
+          "description": "Default number of milliseconds to wait between two polling attempts of a request using '# @poll'"
+        },
+        "rest-client.showSequenceReport": {
+          "type": "string",
+          "enum": [
+            "always",
+            "onFailure",
+            "never"
+          ],
+          "default": "always",
+          "scope": "resource",
+          "description": "When the summary report of a request sequence is shown"
+        },
+        "rest-client.pollTimeoutInMilliseconds": {
+          "type": "number",
+          "default": 60000,
+          "scope": "resource",
+          "description": "Default maximum number of milliseconds a request using '# @poll' keeps polling"
         }
       }
     },

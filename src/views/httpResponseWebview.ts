@@ -13,7 +13,8 @@ import { ResponseFormatUtility } from '../utils/responseFormatUtility';
 import { UserDataManager } from '../utils/userDataManager';
 import { BaseWebview } from './baseWebview';
 
-const hljs = require('highlight.js');
+let highlightJs: any;
+const hljs = () => highlightJs ??= require('highlight.js');
 const contentDisposition = require('content-disposition');
 
 const OPEN = 'Open';
@@ -284,7 +285,7 @@ export class HttpResponseWebview extends BaseWebview {
             const request = response.request;
             const requestNonBodyPart = `${request.method} ${request.url} HTTP/1.1
 ${formatHeaders(request.headers)}`;
-            code += hljs.highlight('http', requestNonBodyPart + '\r\n').value;
+            code += hljs().highlight('http', requestNonBodyPart + '\r\n').value;
             if (request.body) {
                 if (typeof request.body !== 'string') {
                     request.body = 'NOTE: Request Body From File Is Not Shown';
@@ -292,9 +293,9 @@ ${formatHeaders(request.headers)}`;
                 const requestBodyPart = `${ResponseFormatUtility.formatBody(request.body, request.contentType, true)}`;
                 const bodyLanguageAlias = HttpResponseWebview.getHighlightLanguageAlias(request.contentType, request.body);
                 if (bodyLanguageAlias) {
-                    code += hljs.highlight(bodyLanguageAlias, requestBodyPart).value;
+                    code += hljs().highlight(bodyLanguageAlias, requestBodyPart).value;
                 } else {
-                    code += hljs.highlightAuto(requestBodyPart).value;
+                    code += hljs().highlightAuto(requestBodyPart).value;
                 }
                 code += '\r\n';
             }
@@ -305,7 +306,7 @@ ${formatHeaders(request.headers)}`;
         if (previewOption !== PreviewOption.Body) {
             const responseNonBodyPart = `HTTP/${response.httpVersion} ${response.statusCode} ${response.statusMessage}
 ${formatHeaders(response.headers)}`;
-            code += hljs.highlight('http', responseNonBodyPart + (previewOption !== PreviewOption.Headers ? '\r\n' : '')).value;
+            code += hljs().highlight('http', responseNonBodyPart + (previewOption !== PreviewOption.Headers ? '\r\n' : '')).value;
         }
 
         if (previewOption !== PreviewOption.Headers) {
@@ -316,9 +317,9 @@ ${formatHeaders(response.headers)}`;
             } else {
                 const bodyLanguageAlias = HttpResponseWebview.getHighlightLanguageAlias(response.contentType, responseBodyPart);
                 if (bodyLanguageAlias) {
-                    code += hljs.highlight(bodyLanguageAlias, responseBodyPart).value;
+                    code += hljs().highlight(bodyLanguageAlias, responseBodyPart).value;
                 } else {
-                    code += hljs.highlightAuto(responseBodyPart).value;
+                    code += hljs().highlightAuto(responseBodyPart).value;
                 }
             }
         }

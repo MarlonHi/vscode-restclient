@@ -7,6 +7,9 @@ REST Client allows you to send HTTP request and view the response in Visual Stud
 
 ## Main Features
 * Send/Cancel/Rerun __HTTP request__ in editor and view response in a separate pane with syntax highlight
+* Run __pre-request and post-response scripts__ to prepare a request (e.g. login) and to assert on the response
+* Run a __sequence of requests__ one after another, or all requests of a file
+* __Poll__ asynchronous endpoints until a condition is met and assert the __expected status code__ per request
 * Send __GraphQL query__ and author __GraphQL variables__ in editor
 * Send __cURL command__ in editor and copy HTTP request as `cURL command`
 * Auto save and view/clear request history
@@ -63,6 +66,8 @@ REST Client allows you to send HTTP request and view the response in Visual Stud
 * Support for Markdown fenced code blocks with either `http` or `rest`
 
 ## Usage
+> Eine vollständige deutschsprachige Dokumentation aller Funktionen findest du unter [docs/DOKUMENTATION.md](docs/DOKUMENTATION.md).
+
 In editor, type an HTTP request as simple as below:
 ```http
 https://example.com/comments/1
@@ -696,6 +701,235 @@ Date: {{$datetime rfc1123}}
 ```
 > More details about `aadToken` (Azure Active Directory Token) can be found on [Wiki](https://github.com/Huachao/vscode-restclient/wiki/Azure-Active-Directory-Authentication-Samples)
 
+## Pre-request and Post-response Scripts
+Each request can run JavaScript before it is sent and after the response arrives. Inline scripts are written between `< {% ... %}` (pre-request) and `> {% ... %}` (post-response) markers, external script files are referenced with the `# @prescript` and `# @postscript` settings (paths are relative to the http file).
+
+```http
+# @name createComment
+< {%
+    const auth = await sendRequest({
+        method: 'POST',
+        url: '{{host}}/api/login',
+        headers: { 'Content-Type': 'application/json' },
+        body: { user: 'admin', password: 'secret' }
+    });
+    client.global.set('token', auth.body.access_token);
+%}
+POST {{host}}/comments HTTP/1.1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "content": "fake content" }
+
+> {%
+    client.test('status is 201', () => client.assert(response.status === 201, `got ${response.status}`));
+    client.test('has an id', () => client.assert(response.body.id !== undefined));
+    client.global.set('commentId', response.body.id);
+%}
+```
+
+Scripts run in a sandbox and may use `await` directly. Besides the API below, `console`, `Buffer`, `crypto`, `URL`, `URLSearchParams` and the timer functions are available:
+
+Member | Available in | Description
+-------|--------------|-----------------------------------------------------------------------------
+`sendRequest(url \| options)` | both | Send an additional HTTP request, e.g. to log in. Returns the same object as `response`
+`client.global.set/get/has/clear/clearAll` | both | Read and write variables that are usable as `{{name}}` in all following requests
+`await client.resolve(text)` | both | Resolve `{{variables}}` in a string against the current environment, e.g. `await client.resolve('{{host}}')`
+`client.log(...)` / `console.log(...)` | both | Write to the _REST Client Scripts_ output channel
+`client.test(name, fn)` | post-response | Register an assertion, failures are reported and can stop a sequence
+`client.assert(condition, message)` | both | Throw when the condition is falsy
+`request.variables.set/get` | pre-request | Define a variable that is only used by the current request
+`request.headers.set/remove` | pre-request | Add or remove a header of the current request
+`response` | post-response | `status`, `statusText`, `headers`, `contentType`, `body` (parsed when JSON), `rawBody`, `header(name)`
+`request` | post-response | `method`, `url`, `headers`, `body` of the request that was sent
+
+Variables written with `client.global.set` survive until the window is closed and can be dropped with the `Rest Client: Clear Script Variables` command. Script execution can be turned off with `rest-client.enableScripts` and is limited by `rest-client.scriptTimeoutInMilliseconds`.
+
+### File Level Scripts
+A script that should run for _every_ request of a file, typically a login, is declared once with `# @use-scripts` instead of being repeated in each request. The line is usually put at the top of the file, next to the file variables:
+
+```http
+# @use-scripts ./scripts/login.js
+@host = https://example.com
+
+###
+GET {{host}}/comments HTTP/1.1
+
+###
+GET {{host}}/comments/1 HTTP/1.1
+```
+
+Files without that line are never touched, so http files that authenticate differently keep working unchanged and can point to their own script:
+
+```http
+# @use-scripts ./scripts/api-key.js
+```
+
+Paths are relative to the http file and several files can be given comma separated. Alternatively the scripts can be configured per workspace in `.vscode/settings.json` and pulled in with a bare `# @use-scripts`:
+
+```json
+{
+    "rest-client.globalPreRequestScript": "scripts/login.js",
+    "rest-client.globalPostResponseScript": "scripts/check-no-server-error.js"
+}
+```
+
+```http
+# @use-scripts
+```
+
+Those paths are resolved against the workspace folder and `${workspaceFolder}` is substituted. File level scripts run before the script of the request itself, so a single request can still override what they set up.
+
+Since the script runs on every single request, make the login cache its token:
+
+```js
+// scripts/login.js
+const expiresAt = +(client.global.get('tokenExpiresAt') ?? 0);
+
+if (!client.global.get('token') || Date.now() > expiresAt - 30_000) {
+    const auth = await sendRequest({
+        method: 'POST',
+        url: '{{host}}/api/login',
+        headers: { 'Content-Type': 'application/json' },
+        body: { user: '{{user}}', password: '{{password}}' }
+    });
+
+    if (auth.status !== 200) {
+        throw new Error(`login failed with ${auth.status}: ${auth.rawBody}`);
+    }
+
+    client.global.set('token', auth.body.access_token);
+    client.global.set('tokenExpiresAt', Date.now() + auth.body.expires_in * 1000);
+}
+
+request.headers.set('Authorization', `Bearer ${client.global.get('token')}`);
+```
+
+Note that `{{host}}` and the other variables are resolved with the environment that is active when the script runs, and that throwing inside the script aborts the request with the thrown message.
+
+## Request Sequences
+Named requests can be chained into a sequence which is executed request after request. A sequence is a comment only block that lists the names of the requests to run:
+
+```http
+###
+# @sequence Comment flow
+# @steps login, createComment, getCreatedComment
+# @delay 200
+
+###
+# @name login
+POST {{host}}/api/login HTTP/1.1
+...
+```
+
+Setting | Description
+--------|--------------------------------------------------------------------------------------
+`# @sequence <name>` | Starts a sequence definition, a `Run Sequence` CodeLens is shown above the line
+`# @steps <names>` | Comma separated names of the requests to run, may be repeated over several lines
+`# @delay <ms>` | Wait the given amount of milliseconds between two steps
+`# @continue-on-error` | Keep running the remaining steps even when a step or one of its tests failed
+`# @prescript <file>` or `< {% ... %}` | Setup script, executed once before the first step
+
+The setup script is the place for the work that is shared by all steps, for example a single login:
+
+```http
+###
+# @sequence Comment flow
+# @steps createComment, getCreatedComment, deleteComment
+< {%
+    const auth = await sendRequest({ method: 'POST', url: '{{host}}/login',
+        headers: { 'Content-Type': 'application/json' },
+        body: { user: 'admin', password: 'secret' } });
+    request.variables.set('token', auth.body.access_token);
+    request.headers.set('X-Correlation-Id', crypto.randomUUID());
+%}
+```
+
+Variables set with `request.variables.set` and headers set with `request.headers.set` in a setup script apply to every step of that run, while `client.global.set` keeps working across runs as usual. If the setup script fails the sequence is not started.
+
+Individual requests can be taken out of a run with `# @skip`. They are still sent normally with `Send Request`, only `Run Sequence` and `Run All Requests In File` pass over them and list them as skipped in the report:
+
+```http
+###
+# @name deleteComment
+# @skip
+DELETE {{host}}/comments/{{createComment.response.body.$.id}} HTTP/1.1
+```
+
+### Expected Status Codes
+Every request can declare the status code it is expected to answer with, which makes negative tests part of a sequence without writing a script:
+
+```http
+###
+# @name createComment
+# @expect 201
+POST {{host}}/comments HTTP/1.1
+...
+
+###
+# @name createCommentWithoutToken
+# @expect 401, 403
+POST {{host}}/comments HTTP/1.1
+...
+
+###
+# @name getMissingComment
+# @expect 4xx
+GET {{host}}/comments/does-not-exist HTTP/1.1
+```
+
+The expectation accepts exact codes (`201`), wildcards (`2xx`, `x0x`), ranges (`400-404`) and any comma separated combination of them. A mismatch is reported as a failed test in the _REST Client Scripts_ output channel and, inside a sequence, stops the run like any other failure — so a request answering `200` where `401` was expected fails the sequence. A single request is never interrupted by a popup, its result is only written to the output channel.
+
+### Polling Asynchronous Endpoints
+Requests that answer before the work is actually done can be repeated until a condition holds, which is useful for job/status endpoints in a sequence:
+
+```http
+###
+# @name startImport
+# @expect 202
+POST {{host}}/imports HTTP/1.1
+
+###
+# @name waitForImport
+# @poll response.body.state === 'COMPLETED' || response.body.state === 'FAILED'
+# @poll-interval 2000
+# @poll-timeout 120000
+# @expect 200
+GET {{host}}/imports/{{startImport.response.body.$.id}} HTTP/1.1
+
+> {%
+    client.test('import succeeded', () => client.assert(response.body.state === 'COMPLETED', response.body.error));
+%}
+```
+
+Setting | Description
+--------|------------------------------------------------------------------------------------------------
+`# @poll [expression]` | Repeat the request until the JavaScript expression is truthy. Without an expression the `# @expect` status (or any `2xx`) is used as the condition. `# @poll-until` is an alias
+`# @poll-interval <ms>` | Wait time between two attempts (default `rest-client.pollIntervalInMilliseconds`, 1000)
+`# @poll-timeout <ms>` | Give up after that many milliseconds (default `rest-client.pollTimeoutInMilliseconds`, 60000)
+`# @poll-attempts <n>` | Give up after that many attempts
+
+Polling is only active when one of the settings above is present — `# @expect` alone still sends the request exactly once and just asserts its status. To retry until a status is reached, combine both:
+
+```http
+###
+# @name waitForImport
+# @poll
+# @expect 200
+GET {{host}}/imports/{{startImport.response.body.$.id}} HTTP/1.1
+```
+
+The expression is evaluated in the post-response sandbox, so `response.status`, `response.body`, `response.headers` and `client.global` are available. Only the final response is previewed, cached as request variable and passed to the post-response script; every attempt is logged to the _REST Client Scripts_ output channel. If a condition throws (e.g. a field is not present yet) the attempt simply counts as "not satisfied" and polling continues. Running out of time or attempts fails the request, which stops the surrounding sequence.
+
+Every step runs the full pipeline of a normal request, including its pre-request and post-response scripts, and its response is stored as a [request variable](#request-variables), so a step can use `{{login.response.body.$.token}}` of a previous step. By default a sequence stops at the first failing request or failing test (`rest-client.stopSequenceOnError`) and only the response of the last step is previewed (`rest-client.previewSequenceResponses`). The result of each step is written to the _REST Client Scripts_ output channel.
+
+### Sequence Report
+When a sequence (or `Run All Requests In File`) has finished, a summary report is opened beside the editor. It shows the overall verdict, how many requests and tests passed, the total duration and, for every step, its request, response status, duration, test results and failure message. Steps that were skipped because the run stopped early or was cancelled are counted as well. Use `rest-client.showSequenceReport` to only show it on failures (`onFailure`) or to disable it (`never`), in which case the textual summary in the _REST Client Scripts_ output channel is still written.
+
+The report is exclusive to sequences. Sending a single request never opens it and never reveals the output channel, even when its tests or its `# @expect` status fail — those results are written to the output channel and can be looked at there.
+
+Use `Rest Client: Run Request Sequence` (`Ctrl+Alt+S`) to pick a sequence of the current file and `Rest Client: Run All Requests In File` to run every request of the file from top to bottom.
+
 ## Customize Response Preview
 REST Client Extension adds the ability to control the font family, size and weight used in the response preview.
 
@@ -738,6 +972,16 @@ exchange | Preview the whole HTTP exchange(request and response)
 * `rest-client.enableSendRequestCodeLens`: Enable/disable sending request CodeLens in request file. (Default is __true__)
 * `rest-client.enableCustomVariableReferencesCodeLens`: Enable/disable custom variable references CodeLens in request file. (Default is __true__)
 * `rest-client.useContentDispositionFilename`: Use `filename=` from `'content-disposition'` header (if available), to determine output file name, when saving response body. (Default is __true__)
+* `rest-client.enableScripts`: Enable/disable execution of pre-request and post-response scripts. (Default is __true__)
+* `rest-client.scriptTimeoutInMilliseconds`: Timeout in milliseconds for a single script, 0 for infinity. (Default is __30000__)
+* `rest-client.globalPreRequestScript`: JavaScript file(s) executed before every request of a file that opts in with `# @use-scripts`, relative to the workspace folder. (Default is __""__)
+* `rest-client.globalPostResponseScript`: JavaScript file(s) executed after every response of a file that opts in with `# @use-scripts`, relative to the workspace folder. (Default is __""__)
+* `rest-client.enableSequenceCodeLens`: Enable/disable the `Run Sequence` CodeLens above `# @sequence` definitions. (Default is __true__)
+* `rest-client.stopSequenceOnError`: Stop a request sequence as soon as one of its requests or tests fails. (Default is __true__)
+* `rest-client.previewSequenceResponses`: Which responses of a sequence are shown in the response preview, either `none`, `last` or `all`. (Default is __last__)
+* `rest-client.showSequenceReport`: When the summary report of a sequence is shown, either `always`, `onFailure` or `never`. (Default is __always__)
+* `rest-client.pollIntervalInMilliseconds`: Default wait time between two polling attempts of a request using `# @poll`. (Default is __1000__)
+* `rest-client.pollTimeoutInMilliseconds`: Default maximum time a request using `# @poll` keeps polling. (Default is __60000__)
 
 Rest Client extension respects the proxy settings made for Visual Studio Code (`http.proxy` and `http.proxyStrictSSL`). Only HTTP and HTTPS proxies are supported.
 
@@ -749,6 +993,15 @@ Name | Syntax    | Description
 note | `# @note` | Use for request confirmation, especially for critical request
 no-redirect | `# @no-redirect` | Don't follow the 3XX response as redirects
 no-cookie-jar | `# @no-cookie-jar` | Don't save cookies in the cookie jar
+delay | `# @delay 500` | Wait the given amount of milliseconds before the request is sent
+skip | `# @skip` | Exclude the request from `Run Sequence` and `Run All Requests In File`
+expect | `# @expect 201` | Status code(s) the response must have, otherwise the request counts as failed
+poll | `# @poll [expression]` | Repeat the request until the expression (or the expected status) is satisfied
+poll-interval | `# @poll-interval 2000` | Milliseconds between two polling attempts
+poll-timeout | `# @poll-timeout 120000` | Maximum time to keep polling
+poll-attempts | `# @poll-attempts 30` | Maximum number of polling attempts
+prescript | `# @prescript ./login.js` | Run the given JavaScript file before the request is sent
+postscript | `# @postscript ./assert.js` | Run the given JavaScript file after the response is received
 
 > All the above leading `#` can be replaced with `//`
 

@@ -1,4 +1,4 @@
-import * as adal from 'adal-node';
+import type * as adal from 'adal-node';
 
 export class AadTokenCache {
     private static cache = new Map<string, adal.TokenResponse>();

@@ -1,4 +1,4 @@
-import * as adal from 'adal-node';
+import type * as adal from 'adal-node';
 import dayjs, { Dayjs, ManipulateType } from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import * as dotenv from 'dotenv';
@@ -12,12 +12,16 @@ import { ResolveErrorMessage, ResolveWarningMessage } from '../../models/httpVar
 import { VariableType } from '../../models/variableType';
 import { AadTokenCache } from '../aadTokenCache';
 import { AadV2TokenProvider } from '../aadV2TokenProvider';
-import { CALLBACK_PORT, OidcClient } from '../auth/oidcClient';
 import { HttpClient } from '../httpClient';
 import { EnvironmentVariableProvider } from './environmentVariableProvider';
 import { HttpVariable, HttpVariableContext, HttpVariableProvider } from './httpVariableProvider';
 
 const uuidv4 = require('uuid/v4');
+
+// adal-node and the oidc client pull in large dependency trees, both are only needed
+// once an Azure AD or OIDC token variable is actually resolved.
+const loadAdal = (): typeof adal => require('adal-node');
+const loadOidcClient = () => require('../auth/oidcClient');
 
 dayjs.extend(utc);
 
@@ -249,7 +253,7 @@ export class SystemVariableProvider implements HttpVariableProvider {
 
             const endpoint = Constants.AzureClouds[cloud].aad;
             const signInUrl = `${endpoint}${tenantId}`;
-            const authContext = new adal.AuthenticationContext(signInUrl);
+            const authContext = new (loadAdal().AuthenticationContext)(signInUrl);
 
             const clientId = Constants.AzureActiveDirectoryClientId;
 
@@ -300,6 +304,7 @@ export class SystemVariableProvider implements HttpVariableProvider {
             const matchVar = this.oidcRegex.exec(name) ?? [];
             const [_, _1, forceNew, clientId, _3, callbackDomain, callbackPort, authorizeEndpoint, tokenEndpoint,  scopes, audience] = matchVar;
 
+            const { CALLBACK_PORT, OidcClient } = loadOidcClient();
             const access_token = await OidcClient.getAccessToken(forceNew ? true : false, clientId, callbackDomain, parseInt(callbackPort ?? CALLBACK_PORT), authorizeEndpoint, tokenEndpoint, scopes, audience);
             await this.clipboard.writeText(access_token ?? "");
             return { value: access_token ?? "" };
@@ -469,7 +474,7 @@ export class SystemVariableProvider implements HttpVariableProvider {
 
                                 // if directory selected, sign in to that directory; otherwise, stick with the default
                                 if (result) {
-                                    const newDirAuthContext = new adal.AuthenticationContext(`${Constants.AzureClouds[cloud].aad}${result.description}`);
+                                    const newDirAuthContext = new (loadAdal().AuthenticationContext)(`${Constants.AzureClouds[cloud].aad}${result.description}`);
                                     newDirAuthContext.acquireTokenWithRefreshToken(tokenResponse.refreshToken!, clientId, null!, (newDirError: Error, newDirResponse: adal.TokenResponse) => {
                                         // cache/copy new directory token, if successful
                                         resolve(newDirError ? tokenResponse : newDirResponse, true, true);

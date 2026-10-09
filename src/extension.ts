@@ -20,42 +20,15 @@ import { MarkdownCodeLensProvider } from './providers/markdownCodeLensProvider';
 import { RequestVariableCompletionItemProvider } from "./providers/requestVariableCompletionItemProvider";
 import { RequestVariableDefinitionProvider } from './providers/requestVariableDefinitionProvider';
 import { RequestVariableHoverProvider } from './providers/requestVariableHoverProvider';
+import { SequenceCodeLensProvider } from './providers/sequenceCodeLensProvider';
 import { AadTokenCache } from './utils/aadTokenCache';
 import { ConfigurationDependentRegistration } from './utils/dependentRegistration';
+import { ScriptVariableStore } from './utils/scriptVariableStore';
 import { UserDataManager } from './utils/userDataManager';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: ExtensionContext) {
-    await UserDataManager.initialize();
-
-    const requestController = new RequestController(context);
-    const historyController = new HistoryController();
-    const codeSnippetController = new CodeSnippetController(context);
-    const environmentController = await EnvironmentController.create();
-    const swaggerController = new SwaggerController(context);
-    context.subscriptions.push(requestController);
-    context.subscriptions.push(historyController);
-    context.subscriptions.push(codeSnippetController);
-    context.subscriptions.push(environmentController);
-    context.subscriptions.push(commands.registerCommand('rest-client.request', ((document: TextDocument, range: Range) => requestController.run(range))));
-    context.subscriptions.push(commands.registerCommand('rest-client.rerun-last-request', () => requestController.rerun()));
-    context.subscriptions.push(commands.registerCommand('rest-client.cancel-request', () => requestController.cancel()));
-    context.subscriptions.push(commands.registerCommand('rest-client.history', () => historyController.save()));
-    context.subscriptions.push(commands.registerCommand('rest-client.clear-history', () => historyController.clear()));
-    context.subscriptions.push(commands.registerCommand('rest-client.generate-codesnippet', () => codeSnippetController.run()));
-    context.subscriptions.push(commands.registerCommand('rest-client.copy-request-as-curl', () => codeSnippetController.copyAsCurl()));
-    context.subscriptions.push(commands.registerCommand('rest-client.switch-environment', () => environmentController.switchEnvironment()));
-    context.subscriptions.push(commands.registerCommand('rest-client.clear-aad-token-cache', () => AadTokenCache.clear()));
-    context.subscriptions.push(commands.registerCommand('rest-client.clear-cookies', () => requestController.clearCookies()));
-    context.subscriptions.push(commands.registerCommand('rest-client._openDocumentLink', args => {
-        workspace.openTextDocument(Uri.parse(args.path)).then(window.showTextDocument, error => {
-            window.showErrorMessage(error.message);
-        });
-    }));
-    context.subscriptions.push(commands.registerCommand('rest-client.import-swagger', async () => swaggerController.import()));
-
-
     const documentSelector = [
         { language: 'http', scheme: '*' }
     ];
@@ -64,6 +37,8 @@ export async function activate(context: ExtensionContext) {
         { language: 'markdown', scheme: '*' }
     ];
 
+    // Language features are registered first so that the Send Request code lens appears
+    // without waiting for the file system initialization below.
     context.subscriptions.push(languages.registerCompletionItemProvider(documentSelector, new HttpCompletionItemProvider()));
     context.subscriptions.push(languages.registerCompletionItemProvider(documentSelector, new RequestVariableCompletionItemProvider(), '.'));
     context.subscriptions.push(languages.registerHoverProvider(documentSelector, new EnvironmentOrFileVariableHoverProvider()));
@@ -80,11 +55,52 @@ export async function activate(context: ExtensionContext) {
         new ConfigurationDependentRegistration(
             () => languages.registerCodeLensProvider(mdDocumentSelector, new MarkdownCodeLensProvider()),
             s => s.enableSendRequestCodeLens));
+    context.subscriptions.push(
+        new ConfigurationDependentRegistration(
+            () => languages.registerCodeLensProvider(documentSelector, new SequenceCodeLensProvider()),
+            s => s.enableSequenceCodeLens));
     context.subscriptions.push(languages.registerDocumentLinkProvider(documentSelector, new RequestBodyDocumentLinkProvider()));
     context.subscriptions.push(languages.registerDefinitionProvider(documentSelector, new FileVariableDefinitionProvider()));
     context.subscriptions.push(languages.registerDefinitionProvider(documentSelector, new RequestVariableDefinitionProvider()));
     context.subscriptions.push(languages.registerReferenceProvider(documentSelector, new FileVariableReferenceProvider()));
     context.subscriptions.push(languages.registerDocumentSymbolProvider(documentSelector, new HttpDocumentSymbolProvider()));
+
+    await UserDataManager.initialize();
+
+    const requestController = new RequestController(context);
+    const historyController = new HistoryController();
+    const codeSnippetController = new CodeSnippetController(context);
+    const environmentController = await EnvironmentController.create();
+    const swaggerController = new SwaggerController(context);
+    context.subscriptions.push(requestController);
+    context.subscriptions.push(historyController);
+    context.subscriptions.push(codeSnippetController);
+    context.subscriptions.push(environmentController);
+    context.subscriptions.push(commands.registerCommand('rest-client.request', ((document: TextDocument, range: Range) => requestController.run(range))));
+    context.subscriptions.push(commands.registerCommand('rest-client.rerun-last-request', () => requestController.rerun()));
+    context.subscriptions.push(commands.registerCommand('rest-client.cancel-request', () => requestController.cancel()));
+    context.subscriptions.push(commands.registerCommand('rest-client.run-sequence', ((document?: TextDocument, name?: string) => requestController.runSequence(document, name))));
+    context.subscriptions.push(commands.registerCommand('rest-client.run-all-requests', () => requestController.runAll()));
+    context.subscriptions.push(commands.registerCommand('rest-client.clear-script-variables', () => {
+        const count = ScriptVariableStore.getAll().size;
+        ScriptVariableStore.clearAll();
+        window.showInformationMessage(count > 0
+            ? `Cleared ${count} script variable(s).`
+            : 'No script variables are currently set.');
+    }));
+    context.subscriptions.push(commands.registerCommand('rest-client.history', () => historyController.save()));
+    context.subscriptions.push(commands.registerCommand('rest-client.clear-history', () => historyController.clear()));
+    context.subscriptions.push(commands.registerCommand('rest-client.generate-codesnippet', () => codeSnippetController.run()));
+    context.subscriptions.push(commands.registerCommand('rest-client.copy-request-as-curl', () => codeSnippetController.copyAsCurl()));
+    context.subscriptions.push(commands.registerCommand('rest-client.switch-environment', () => environmentController.switchEnvironment()));
+    context.subscriptions.push(commands.registerCommand('rest-client.clear-aad-token-cache', () => AadTokenCache.clear()));
+    context.subscriptions.push(commands.registerCommand('rest-client.clear-cookies', () => requestController.clearCookies()));
+    context.subscriptions.push(commands.registerCommand('rest-client._openDocumentLink', args => {
+        workspace.openTextDocument(Uri.parse(args.path)).then(window.showTextDocument, error => {
+            window.showErrorMessage(error.message);
+        });
+    }));
+    context.subscriptions.push(commands.registerCommand('rest-client.import-swagger', async () => swaggerController.import()));
 
     const diagnosticsProvider = new CustomVariableDiagnosticsProvider();
     context.subscriptions.push(diagnosticsProvider);

@@ -1,8 +1,10 @@
 import { EOL } from 'os';
 import { Position, Range, TextDocument, TextEditor, window } from 'vscode';
 import * as Constants from '../common/constants';
+import { ScriptSource, ScriptType } from '../models/httpScript';
 import { fromString as ParseReqMetaKey, RequestMetadata } from '../models/requestMetadata';
 import { SelectedRequest } from '../models/SelectedRequest';
+import { ScriptBlockParser } from './scriptBlockParser';
 import { VariableProcessor } from './variableProcessor';
 
 export interface RequestRangeOptions {
@@ -10,6 +12,15 @@ export interface RequestRangeOptions {
     ignoreEmptyLine?: boolean;
     ignoreFileVariableDefinitionLine?: boolean;
     ignoreResponseRange?: boolean;
+}
+
+export interface SelectRequestOptions {
+    /**
+     * When false the returned text still contains the `{{variable}}` references and the
+     * caller is responsible for resolving them, which allows pre-request scripts to
+     * contribute variables beforehand.
+     */
+    resolveVariables?: boolean;
 }
 
 interface PromptVariableDefinition {
@@ -20,7 +31,7 @@ interface PromptVariableDefinition {
 export class Selector {
     private static readonly responseStatusLineRegex = /^\s*HTTP\/[\d.]+/;
 
-    public static async getRequest(editor: TextEditor, range: Range | null = null): Promise<SelectedRequest | null> {
+    public static async getRequest(editor: TextEditor, range: Range | null = null, options?: SelectRequestOptions): Promise<SelectedRequest | null> {
         if (!editor.document) {
             return null;
         }
@@ -49,8 +60,26 @@ export class Selector {
             return null;
         }
 
-        // convert request text into lines
-        const lines = selectedText.split(Constants.LineSplitterRegex);
+        return await this.parseSelectedText(selectedText, options);
+    }
+
+    /**
+     * Resolves the request block which contains the given line, without requiring an active editor selection.
+     */
+    public static async getRequestAtLine(document: TextDocument, line: number, options?: SelectRequestOptions): Promise<SelectedRequest | null> {
+        const selectedText = this.getDelimitedText(document.getText(), line);
+        if (selectedText === null) {
+            return null;
+        }
+
+        return await this.parseSelectedText(selectedText, options);
+    }
+
+    private static async parseSelectedText(selectedText: string, options?: SelectRequestOptions): Promise<SelectedRequest | null> {
+        const resolveVariables = options?.resolveVariables ?? true;
+
+        // convert request text into lines and pull out the inline script blocks
+        const { lines, preRequestScripts, postResponseScripts } = ScriptBlockParser.extract(selectedText.split(Constants.LineSplitterRegex));
 
         // parse request metadata
         const metadatas = this.parseReqMetadatas(lines);
@@ -69,15 +98,34 @@ export class Selector {
             return null;
         }
 
-        selectedText = rawLines.slice(requestRange[0], requestRange[1] + 1).join(EOL);
+        let text = rawLines.slice(requestRange[0], requestRange[1] + 1).join(EOL);
 
         // variables replacement
-        selectedText = await VariableProcessor.processRawRequest(selectedText, promptVariables);
+        if (resolveVariables) {
+            text = await VariableProcessor.processRawRequest(text, promptVariables);
+        }
 
         return {
-            text: selectedText,
-            metadatas: metadatas
+            text,
+            metadatas,
+            promptVariables,
+            preRequestScripts: this.appendFileScripts(preRequestScripts, metadatas.get(RequestMetadata.PreRequestScript), ScriptType.PreRequest),
+            postResponseScripts: this.appendFileScripts(postResponseScripts, metadatas.get(RequestMetadata.PostResponseScript), ScriptType.PostResponse),
         };
+    }
+
+    private static appendFileScripts(scripts: ScriptSource[], paths: string | undefined, type: ScriptType): ScriptSource[] {
+        if (!paths) {
+            return scripts;
+        }
+
+        const fileScripts = paths
+            .split(',')
+            .map(p => p.trim())
+            .filter(p => p !== '')
+            .map<ScriptSource>(p => ({ kind: 'file', type, path: p }));
+
+        return type === ScriptType.PreRequest ? [...fileScripts, ...scripts] : [...scripts, ...fileScripts];
     }
 
     public static parseReqMetadatas(lines: string[]): Map<RequestMetadata, string | undefined> {
@@ -235,6 +283,25 @@ export class Selector {
         }
 
         return null;
+    }
+
+    /**
+     * Ranges of the blocks separated by the `###` delimiter, comment lines included.
+     */
+    public static getBlockRanges(lines: string[]): [number, number][] {
+        const blocks: [number, number][] = [];
+        const delimitedLines = this.getDelimiterRows(lines);
+        delimitedLines.push(lines.length);
+
+        let prev = -1;
+        for (const current of delimitedLines) {
+            if (prev + 1 <= current - 1) {
+                blocks.push([prev + 1, current - 1]);
+            }
+            prev = current;
+        }
+
+        return blocks;
     }
 
     private static getDelimiterRows(lines: string[]): number[] {

@@ -50,6 +50,16 @@ export interface IRestClientSettings {
     readonly enableSendRequestCodeLens: boolean;
     readonly enableCustomVariableReferencesCodeLens: boolean;
     readonly useContentDispositionFilename: boolean;
+    readonly enableScripts: boolean;
+    readonly scriptTimeoutInMilliseconds: number;
+    readonly globalPreRequestScript: string;
+    readonly globalPostResponseScript: string;
+    readonly enableSequenceCodeLens: boolean;
+    readonly stopSequenceOnError: boolean;
+    readonly previewSequenceResponses: string;
+    readonly showSequenceReport: string;
+    readonly pollIntervalInMilliseconds: number;
+    readonly pollTimeoutInMilliseconds: number;
 }
 
 export class SystemSettings implements IRestClientSettings {
@@ -86,6 +96,56 @@ export class SystemSettings implements IRestClientSettings {
     private _enableSendRequestCodeLens: boolean;
     private _enableCustomVariableReferencesCodeLens: boolean;
     private _useContentDispositionFilename: boolean;
+    private _enableScripts: boolean;
+    private _scriptTimeoutInMilliseconds: number;
+    private _globalPreRequestScript: string;
+    private _globalPostResponseScript: string;
+    private _enableSequenceCodeLens: boolean;
+    private _stopSequenceOnError: boolean;
+    private _previewSequenceResponses: string;
+    private _showSequenceReport: string;
+    private _pollIntervalInMilliseconds: number;
+    private _pollTimeoutInMilliseconds: number;
+
+    public get enableScripts() {
+        return this._enableScripts;
+    }
+
+    public get scriptTimeoutInMilliseconds() {
+        return this._scriptTimeoutInMilliseconds;
+    }
+
+    public get globalPreRequestScript() {
+        return this._globalPreRequestScript;
+    }
+
+    public get globalPostResponseScript() {
+        return this._globalPostResponseScript;
+    }
+
+    public get enableSequenceCodeLens() {
+        return this._enableSequenceCodeLens;
+    }
+
+    public get stopSequenceOnError() {
+        return this._stopSequenceOnError;
+    }
+
+    public get previewSequenceResponses() {
+        return this._previewSequenceResponses;
+    }
+
+    public get showSequenceReport() {
+        return this._showSequenceReport;
+    }
+
+    public get pollIntervalInMilliseconds() {
+        return this._pollIntervalInMilliseconds;
+    }
+
+    public get pollTimeoutInMilliseconds() {
+        return this._pollTimeoutInMilliseconds;
+    }
 
     public get followRedirect() {
         return this._followRedirect;
@@ -295,6 +355,16 @@ export class SystemSettings implements IRestClientSettings {
         this._enableSendRequestCodeLens = restClientSettings.get<boolean>('enableSendRequestCodeLens', true);
         this._enableCustomVariableReferencesCodeLens = restClientSettings.get<boolean>('enableCustomVariableReferencesCodeLens', true);
         this._useContentDispositionFilename = restClientSettings.get<boolean>('useContentDispositionFilename', true);
+        this._enableScripts = restClientSettings.get<boolean>('enableScripts', true);
+        this._scriptTimeoutInMilliseconds = restClientSettings.get<number>('scriptTimeoutInMilliseconds', 30000);
+        this._globalPreRequestScript = restClientSettings.get<string>('globalPreRequestScript', '');
+        this._globalPostResponseScript = restClientSettings.get<string>('globalPostResponseScript', '');
+        this._enableSequenceCodeLens = restClientSettings.get<boolean>('enableSequenceCodeLens', true);
+        this._stopSequenceOnError = restClientSettings.get<boolean>('stopSequenceOnError', true);
+        this._previewSequenceResponses = restClientSettings.get<string>('previewSequenceResponses', 'last');
+        this._showSequenceReport = restClientSettings.get<string>('showSequenceReport', 'always');
+        this._pollIntervalInMilliseconds = restClientSettings.get<number>('pollIntervalInMilliseconds', 1000);
+        this._pollTimeoutInMilliseconds = restClientSettings.get<number>('pollTimeoutInMilliseconds', 60000);
         languages.setLanguageConfiguration('http', { brackets: this._addRequestBodyLineIndentationAroundBrackets ? this.brackets : [] });
 
         const httpSettings = workspace.getConfiguration("http");
@@ -469,6 +539,46 @@ export class RestClientSettings implements IRestClientSettings {
 
     public get useContentDispositionFilename() {
         return this.systemSettings.useContentDispositionFilename;
+    }
+
+    public get enableScripts() {
+        return this.systemSettings.enableScripts;
+    }
+
+    public get scriptTimeoutInMilliseconds() {
+        return this.systemSettings.scriptTimeoutInMilliseconds;
+    }
+
+    public get globalPreRequestScript() {
+        return this.systemSettings.globalPreRequestScript;
+    }
+
+    public get globalPostResponseScript() {
+        return this.systemSettings.globalPostResponseScript;
+    }
+
+    public get enableSequenceCodeLens() {
+        return this.systemSettings.enableSequenceCodeLens;
+    }
+
+    public get stopSequenceOnError() {
+        return this.systemSettings.stopSequenceOnError;
+    }
+
+    public get previewSequenceResponses() {
+        return this.systemSettings.previewSequenceResponses;
+    }
+
+    public get showSequenceReport() {
+        return this.systemSettings.showSequenceReport;
+    }
+
+    public get pollIntervalInMilliseconds() {
+        return this.systemSettings.pollIntervalInMilliseconds;
+    }
+
+    public get pollTimeoutInMilliseconds() {
+        return this.systemSettings.pollTimeoutInMilliseconds;
     }
 
     private readonly systemSettings = SystemSettings.Instance;
