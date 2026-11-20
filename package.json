@@ -2,7 +2,7 @@
   "name": "rest-client-fork",
   "displayName": "REST Client (fork)",
   "description": "REST Client for Visual Studio Code (fork)",
-  "version": "0.28.1",
+  "version": "0.29.1",
   "publisher": "marlon",
   "author": {
     "name": "Marlon",
@@ -734,13 +734,13 @@
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "Comma separated JavaScript file(s) executed before every request of a file that opts in with '# @use-scripts'. Relative paths are resolved against the workspace folder"
+          "description": "Comma separated JavaScript file(s) executed before every request of a file that opts in with '# @use-scripts'. Supports absolute paths, '~' and '${userHome}' for scripts shared across workspaces, '${workspaceFolder}', and paths relative to the workspace folder"
         },
         "rest-client.globalPostResponseScript": {
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "Comma separated JavaScript file(s) executed after every response of a file that opts in with '# @use-scripts'. Relative paths are resolved against the workspace folder"
+          "description": "Comma separated JavaScript file(s) executed after every response of a file that opts in with '# @use-scripts'. Supports absolute paths, '~' and '${userHome}' for scripts shared across workspaces, '${workspaceFolder}', and paths relative to the workspace folder"
         },
         "rest-client.enableSequenceCodeLens": {
           "type": "boolean",

@@ -545,12 +545,12 @@ Dateien **ohne** diese Zeile bleiben unberührt – Dateien mit anderer Authenti
 # @use-scripts ./scripts/api-key.js
 ```
 
-Alternativ lassen sich die Skripte pro Workspace in `.vscode/settings.json` konfigurieren und mit einem leeren `# @use-scripts` einbinden:
+Alternativ lassen sich die Skripte **einmal global** in den User-Settings (<kbd>Strg</kbd>+<kbd>,</kbd> → Reiter *User*, nicht `.vscode/settings.json`) konfigurieren und mit einem leeren `# @use-scripts` einbinden:
 
 ```json
 {
-    "rest-client.globalPreRequestScript": "scripts/login.js",
-    "rest-client.globalPostResponseScript": "scripts/check-no-server-error.js"
+    "rest-client.globalPreRequestScript": "~/rest-client/login.js",
+    "rest-client.globalPostResponseScript": "~/rest-client/check-no-server-error.js"
 }
 ```
 
@@ -558,7 +558,19 @@ Alternativ lassen sich die Skripte pro Workspace in `.vscode/settings.json` konf
 # @use-scripts
 ```
 
-Diese Pfade sind relativ zum Workspace-Ordner, `${workspaceFolder}` wird ersetzt. Dateiweite Skripte laufen **vor** dem Skript des einzelnen Requests, ein einzelner Request kann also immer noch überschreiben.
+Damit dieselbe `login.js` in jedem Workspace funktioniert, werden folgende Pfadformen unterstützt:
+
+| Schreibweise | Aufgelöst zu |
+|---|---|
+| `~/rest-client/login.js` | Home-Verzeichnis des Benutzers – workspace-unabhängig |
+| `${userHome}/rest-client/login.js` | dasselbe, nur ausgeschrieben |
+| `/opt/rest-client/login.js` bzw. `C:\\tools\\login.js` | absoluter Pfad |
+| `${workspaceFolder}/scripts/login.js` | Wurzel des aktuellen Workspace |
+| `scripts/login.js` | relativ zum Workspace-Ordner |
+
+`~` und `${userHome}` gelten genauso in `# @use-scripts`, `# @prescript` und `# @postscript` innerhalb der `.http`-Datei. Nur dort sind einfache relative Pfade relativ zur `.http`-Datei statt zum Workspace.
+
+Dateiweite Skripte laufen **vor** dem Skript des einzelnen Requests, ein einzelner Request kann also immer noch überschreiben.
 
 Da das Skript bei jedem Request läuft, sollte das Token zwischengespeichert werden:
 
@@ -698,6 +710,7 @@ Weitere Details:
 * Im Ausdruck stehen `response.status`, `response.body`, `response.headers` und `client.global` zur Verfügung.
 * Wirft der Ausdruck einen Fehler, weil ein Feld noch nicht existiert, zählt der Versuch einfach als „noch nicht fertig“ und es wird weiter gepollt.
 * Nur die **letzte** Antwort landet in der Vorschau, wird als Request-Variable gespeichert und an das Post-Response-Skript übergeben. Jeder Versuch wird im Output-Kanal protokolliert.
+* Vor jedem Wiederholungsversuch werden die **Header neu aufgelöst**. Dadurch bekommt ein Poll, der länger läuft als die Gültigkeit eines Access-Tokens (`{{$aadV2Token}}`, `{{$oidcAccessToken}}`, Token aus Datei-/Umgebungsvariablen oder Pre-Request-Skripten), automatisch ein frisches Token statt eines `401`. Methode, URL und Body bleiben unverändert, damit immer dieselbe Ressource abgefragt wird.
 * Läuft die Zeit oder die Versuchszahl ab, gilt der Request als fehlgeschlagen und stoppt eine laufende Sequenz.
 * <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd> bricht auch ein laufendes Polling ab.
 

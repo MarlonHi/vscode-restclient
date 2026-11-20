@@ -16,6 +16,7 @@ import { HttpClient } from '../utils/httpClient';
 import { parsePollOptions, PollOptions } from '../utils/pollOptions';
 import { RequestState, RequestStatusEntry } from '../utils/requestStatusBarEntry';
 import { RequestVariableCache } from "../utils/requestVariableCache";
+import { expandUserHome } from '../utils/scriptPath';
 import { ScriptReporter } from '../utils/scriptReporter';
 import { ScriptRequestContext, ScriptRunner } from '../utils/scriptRunner';
 import { Selector } from '../utils/selector';
@@ -35,6 +36,8 @@ interface ExecuteOptions {
     scriptContext?: ScriptRequestContext;
     expectedStatus?: string;
     poll?: PollOptions;
+    /** Resolves the raw request again, used to refresh expiring credentials between polling attempts. */
+    rebuildRequest?: () => Promise<HttpRequest>;
 }
 
 interface PollingOutcome {
@@ -371,7 +374,7 @@ export class RequestController {
             .map(p => p.trim())
             .filter(p => p !== '')
             .map<ScriptSource>(p => {
-                const expanded = folder ? p.replace(/\$\{workspaceFolder\}/g, folder) : p;
+                const expanded = expandUserHome(folder ? p.replace(/\$\{workspaceFolder\}/g, folder) : p);
                 const resolved = !path.isAbsolute(expanded) && folder ? path.join(folder, expanded) : expanded;
                 return { kind: 'file', type, path: resolved };
             });
@@ -462,23 +465,28 @@ export class RequestController {
             }
         }
 
+        const rebuildRequest = async (): Promise<HttpRequest> => {
+            const text = await VariableProcessor.processRawRequest(selectedRequest.text, new Map(scriptContext.variables), document);
+            const request = await RequestParserFactory.createRequestParser(text, settings).parseHttpRequest(name);
+            for (const [header, value] of scriptContext.headers) {
+                if (value === null) {
+                    delete request.headers[header];
+                } else {
+                    request.headers[header] = value;
+                }
+            }
+
+            return request;
+        };
+
         let httpRequest: HttpRequest;
         try {
-            const text = await VariableProcessor.processRawRequest(selectedRequest.text, new Map(scriptContext.variables));
-            httpRequest = await RequestParserFactory.createRequestParser(text, settings).parseHttpRequest(name);
+            httpRequest = await rebuildRequest();
         } catch (error) {
             const message = error?.message ?? String(error);
             this._requestStatusEntry.update({ state: RequestState.Error });
             window.showErrorMessage(message);
             return { succeeded: false, message, tests: [] };
-        }
-
-        for (const [header, value] of scriptContext.headers) {
-            if (value === null) {
-                delete httpRequest.headers[header];
-            } else {
-                httpRequest.headers[header] = value;
-            }
         }
 
         const delayInMilliseconds = +(metadatas.get(RequestMetadata.Delay) ?? 0);
@@ -491,6 +499,7 @@ export class RequestController {
             postResponseScripts,
             scriptContext,
             expectedStatus: metadatas.get(RequestMetadata.Expect),
+            rebuildRequest,
             poll: parsePollOptions(metadatas, {
                 intervalInMilliseconds: SystemSettings.Instance.pollIntervalInMilliseconds,
                 timeoutInMilliseconds: SystemSettings.Instance.pollTimeoutInMilliseconds
@@ -602,6 +611,15 @@ export class RequestController {
         while (true) {
             if (bufferedBody && attempt > 0) {
                 httpRequest.body = convertBufferToStream(bufferedBody);
+            }
+
+            if (attempt > 0 && options.rebuildRequest) {
+                // Polling can outlive the lifetime of an access token, so credentials are resolved again per attempt.
+                try {
+                    httpRequest.headers = (await options.rebuildRequest()).headers;
+                } catch (error) {
+                    logs.push(`poll attempt ${attempt + 1}: unable to refresh the request headers: ${error?.message ?? String(error)}`);
+                }
             }
 
             attempt++;

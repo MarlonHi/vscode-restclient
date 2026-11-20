@@ -248,14 +248,18 @@ class AadV2TokenCache {
 
     private static tokens: Map<string, AadV2TokenCacheEntry> = new Map<string, AadV2TokenCacheEntry>();
 
+    /** Evict a token before it really expires so in-flight requests never use a token that is about to die. */
+    private static readonly expiryMarginInMilliseconds = 60 * 1000;
+
     public static setToken(cacheKey: string, scopes: string[], token: string, expires_in: number) {
         const entry: AadV2TokenCacheEntry = new AadV2TokenCacheEntry();
         entry.token = token;
         entry.scopes = scopes;
         this.tokens.set(cacheKey, entry);
+        const lifetime = expires_in * 1000;
         setTimeout(() => {
             this.tokens.delete(cacheKey);
-        }, expires_in * 1000);
+        }, Math.max(lifetime - this.expiryMarginInMilliseconds, lifetime / 2));
     }
 
     public static getToken(cacheKey: string): AadV2TokenCacheEntry | undefined {

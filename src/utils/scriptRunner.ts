@@ -11,6 +11,7 @@ import { getScriptDisplayName, ScriptExecutionResult, ScriptSource, TestResult }
 import { HttpClient } from './httpClient';
 import { MimeUtility } from './mimeUtility';
 import { getContentType } from './misc';
+import { expandUserHome } from './scriptPath';
 import { ScriptVariableStore } from './scriptVariableStore';
 import { VariableProcessor } from './variableProcessor';
 
@@ -274,12 +275,13 @@ export class ScriptRunner {
     }
 
     private static resolvePath(scriptPath: string, documentUri?: Uri): string {
-        if (path.isAbsolute(scriptPath)) {
-            return scriptPath;
+        const expanded = expandUserHome(scriptPath);
+        if (path.isAbsolute(expanded)) {
+            return expanded;
         }
 
         const documentPath = documentUri?.scheme === 'file' ? documentUri.fsPath : undefined;
-        return documentPath ? path.resolve(path.dirname(documentPath), scriptPath) : path.resolve(scriptPath);
+        return documentPath ? path.resolve(path.dirname(documentPath), expanded) : path.resolve(expanded);
     }
 
     private static stringify(value: unknown): string {

@@ -60,7 +60,7 @@ export class Selector {
             return null;
         }
 
-        return await this.parseSelectedText(selectedText, options);
+        return await this.parseSelectedText(selectedText, options, editor.document);
     }
 
     /**
@@ -72,10 +72,13 @@ export class Selector {
             return null;
         }
 
-        return await this.parseSelectedText(selectedText, options);
+        return await this.parseSelectedText(selectedText, options, document);
     }
 
-    private static async parseSelectedText(selectedText: string, options?: SelectRequestOptions): Promise<SelectedRequest | null> {
+    private static async parseSelectedText(
+        selectedText: string,
+        options?: SelectRequestOptions,
+        document?: TextDocument): Promise<SelectedRequest | null> {
         const resolveVariables = options?.resolveVariables ?? true;
 
         // convert request text into lines and pull out the inline script blocks
@@ -102,7 +105,7 @@ export class Selector {
 
         // variables replacement
         if (resolveVariables) {
-            text = await VariableProcessor.processRawRequest(text, promptVariables);
+            text = await VariableProcessor.processRawRequest(text, promptVariables, document);
         }
 
         return {
